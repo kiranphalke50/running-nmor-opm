@@ -16,11 +16,13 @@ import numpy as np
 from scipy.optimize import curve_fit, differential_evolution
 
 # --------------------------- user settings ---------------------------
-CSV_FILE = r"Y:\KiranPhalke\NMOR_sensor_characterization\test_sweep_for_fitting_lorentzian_000\dev3994_demods_0_sample_00000.csv"
+CSV_FILE = r"Y:\KiranPhalke\NMOR_sensor_characterization\test_sweep_b1_m320_b2_600_p1_290_p2_90_l_200_000\dev3994_demods_0_sample_00000.csv"
 CHUNK = 0
-FIT_MIN_HZ = 1650
-FIT_MAX_HZ = 2300
-LINEAR_HALF_WINDOW_FWHM = 0.25  # fit Y over centre +/- 0.25 * FWHM
+FIT_MIN_HZ = 2500
+FIT_MAX_HZ = 3500
+LINEAR_HALF_WINDOW_FWHM = 0.40  # fit Y over centre +/- 0.40 * FWHM
+PLOT_CHUNK = 0
+MAX_CHUNKS = 20
 # --------------------------------------------------------------------
 
 
@@ -84,109 +86,389 @@ def generate_initial_parameters(x_data, y_data):
     return result.x
 
 
-def main():
-    frequency, x, y, phase = read_zi_csv(CSV_FILE, CHUNK)
+def fit_single_sensor_run():
+    results = []
+    plot_data = None
 
-    resonance_mask = (frequency >= FIT_MIN_HZ) & (frequency <= FIT_MAX_HZ)
-    f_fit = frequency[resonance_mask]
-    x_fit = x[resonance_mask]
+    for chunk in range(MAX_CHUNKS):
+        try:
+            frequency, x, y, phase = read_zi_csv(CSV_FILE, chunk)
+        except ValueError:
+            # The chunk does not exist or does not contain all required fields.
+            continue
 
-    if len(f_fit) < 8:
-        raise ValueError("Too few points in the selected Lorentzian fit window.")
+        try:
+            # Select the frequency interval containing the resonance.
+            resonance_mask = (
+                (frequency >= FIT_MIN_HZ)
+                & (frequency <= FIT_MAX_HZ)
+            )
 
-    initial = generate_initial_parameters(f_fit, x_fit)
-    parameters, covariance = curve_fit(
-        lorentzian_single,
-        f_fit,
-        x_fit,
-        p0=initial,
-        maxfev=5000,
-    )
+            f_fit = frequency[resonance_mask]
+            x_fit = x[resonance_mask]
 
-    amplitude, centre_hz, hwhm_hz, background_slope, offset = parameters
-    hwhm_hz = abs(hwhm_hz)
-    fwhm_hz = 2.0 * hwhm_hz
-    parameter_errors = np.sqrt(np.diag(covariance))
-    fwhm_error_hz = 2.0 * parameter_errors[2]
+            if len(f_fit) < 8:
+                raise ValueError(
+                    "Too few points in the selected Lorentzian fit window."
+                )
 
-    # Fit Y only close to the zero crossing, rather than across the full FWHM.
-    half_window_hz = LINEAR_HALF_WINDOW_FWHM * fwhm_hz
-    linear_mask = np.abs(frequency - centre_hz) <= half_window_hz
+            # Fit the Lorentzian X channel.
+            initial = generate_initial_parameters(f_fit, x_fit)
 
-    if np.count_nonzero(linear_mask) < 3:
-        raise ValueError(
-            "Too few points for the Y line fit. Increase "
-            "LINEAR_HALF_WINDOW_FWHM or acquire a finer sweep."
+            parameters, covariance = curve_fit(
+                lorentzian_single,
+                f_fit,
+                x_fit,
+                p0=initial,
+                maxfev=5000,
+            )
+
+            (
+                amplitude,
+                centre_hz,
+                hwhm_hz,
+                background_slope,
+                offset,
+            ) = parameters
+
+            hwhm_hz = abs(hwhm_hz)
+            fwhm_hz = 2.0 * hwhm_hz
+
+            parameter_errors = np.sqrt(np.diag(covariance))
+            fwhm_error_hz = 2.0 * parameter_errors[2]
+
+            # Fit Y close to the fitted resonance centre.
+            half_window_hz = (
+                LINEAR_HALF_WINDOW_FWHM * fwhm_hz
+            )
+
+            linear_mask = (
+                np.abs(frequency - centre_hz)
+                <= half_window_hz
+            )
+
+            if np.count_nonzero(linear_mask) < 3:
+                raise ValueError(
+                    "Too few points for the Y line fit."
+                )
+
+            y_slope, y_intercept = np.polyfit(
+                frequency[linear_mask],
+                y[linear_mask],
+                deg=1,
+            )
+
+            y_line = (
+                y_slope * frequency[linear_mask]
+                + y_intercept
+            )
+
+            # Calculate goodness of the Y line fit.
+            y_residuals = y[linear_mask] - y_line
+            ss_res = np.sum(y_residuals**2)
+
+            ss_tot = np.sum(
+                (
+                    y[linear_mask]
+                    - np.mean(y[linear_mask])
+                ) ** 2
+            )
+
+            y_r_squared = (
+                1.0 - ss_res / ss_tot
+                if ss_tot > 0
+                else np.nan
+            )
+
+            # Old A/W proxy, now using FWHM consistently.
+            amplitude_over_fwhm = amplitude / fwhm_hz
+
+            # Save results for this chunk.
+            results.append(
+                {
+                    "chunk": chunk,
+                    "amplitude": amplitude,
+                    "centre_hz": centre_hz,
+                    "hwhm_hz": hwhm_hz,
+                    "fwhm_hz": fwhm_hz,
+                    "fwhm_error_hz": fwhm_error_hz,
+                    "background_slope": background_slope,
+                    "offset": offset,
+                    "amplitude_over_fwhm": amplitude_over_fwhm,
+                    "y_slope": y_slope,
+                    "absolute_y_slope": abs(y_slope),
+                    "y_intercept": y_intercept,
+                    "y_r_squared": y_r_squared,
+                }
+            )
+
+            print(
+                f"Chunk {chunk:2d}: "
+                f"centre = {centre_hz:9.3f} Hz, "
+                f"FWHM = {fwhm_hz:8.3f} Hz, "
+                f"|Y slope| = {abs(y_slope):.6e}/Hz, "
+                f"R^2 = {y_r_squared:.5f}"
+            )
+
+            # Retain the required arrays only for the chunk to be plotted.
+            if chunk == PLOT_CHUNK:
+                plot_data = {
+                    "chunk": chunk,
+                    "frequency": frequency,
+                    "x": x,
+                    "y": y,
+                    "phase": phase,
+                    "f_fit": f_fit,
+                    "parameters": parameters,
+                    "centre_hz": centre_hz,
+                    "fwhm_hz": fwhm_hz,
+                    "half_window_hz": half_window_hz,
+                    "linear_mask": linear_mask,
+                    "y_line": y_line,
+                    "y_slope": y_slope,
+                }
+
+        except (
+            ValueError,
+            RuntimeError,
+            FloatingPointError,
+        ) as error:
+            print(f"Chunk {chunk:2d}: fit skipped, {error}")
+            continue
+
+    if not results:
+        raise RuntimeError(
+            "No chunks were fitted successfully."
         )
 
-    y_slope, y_intercept = np.polyfit(frequency[linear_mask], y[linear_mask], deg=1)
-    y_line = y_slope * frequency[linear_mask] + y_intercept
-
-    y_residuals = y[linear_mask] - y_line
-    ss_res = np.sum(y_residuals**2)
-    ss_tot = np.sum((y[linear_mask] - np.mean(y[linear_mask])) ** 2)
-    y_r_squared = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
-
-    # Old A/W proxy, using FWHM consistently.
-    amplitude_over_fwhm = amplitude / fwhm_hz
-
-    print(f"Chunk: {CHUNK}")
-    print(f"Lorentzian fit range: {FIT_MIN_HZ:.1f} to {FIT_MAX_HZ:.1f} Hz")
-    print(f"Centre frequency: {centre_hz:.3f} Hz")
-    print(f"Amplitude: {amplitude:.6e}")
-    print(f"FWHM: {fwhm_hz:.3f} +/- {fwhm_error_hz:.3f} Hz")
-    print(f"A/FWHM proxy: {amplitude_over_fwhm:.6e} per Hz")
-    print(
-        f"Y linear-fit range: {centre_hz - half_window_hz:.3f} to "
-        f"{centre_hz + half_window_hz:.3f} Hz"
+    # Convert saved results into NumPy arrays.
+    amplitudes = np.array(
+        [result["amplitude"] for result in results]
     )
-    print(f"Y slope proxy: {y_slope:.6e} per Hz")
-    print(f"Absolute Y slope proxy: {abs(y_slope):.6e} per Hz")
-    print(f"Y line-fit R^2: {y_r_squared:.5f}")
 
-    dense_frequency = np.linspace(f_fit.min(), f_fit.max(), 1000)
+    centres_hz = np.array(
+        [result["centre_hz"] for result in results]
+    )
 
-    fig, axes = plt.subplots(3, 1, figsize=(9, 9), sharex=True)
+    fwhms_hz = np.array(
+        [result["fwhm_hz"] for result in results]
+    )
 
-    axes[0].plot(frequency, x, "o", markersize=3, label="X data")
+    fwhm_errors_hz = np.array(
+        [result["fwhm_error_hz"] for result in results]
+    )
+
+    amplitude_over_fwhm_values = np.array(
+        [
+            result["amplitude_over_fwhm"]
+            for result in results
+        ]
+    )
+
+    y_slopes = np.array(
+        [result["y_slope"] for result in results]
+    )
+
+    absolute_y_slopes = np.array(
+        [
+            result["absolute_y_slope"]
+            for result in results
+        ]
+    )
+
+    y_r_squared_values = np.array(
+        [result["y_r_squared"] for result in results]
+    )
+
+    # ddof=1 gives the sample standard deviation.
+    # If there is only one successful chunk, use zero.
+    ddof = 1 if len(results) > 1 else 0
+
+    print("\n" + "=" * 72)
+    print("AVERAGED RESULTS")
+    print("=" * 72)
+
+    print(f"Successfully fitted chunks: {len(results)}")
+
+    print(
+        f"Centre frequency: "
+        f"{np.mean(centres_hz):.3f} +/- "
+        f"{np.std(centres_hz, ddof=ddof):.3f} Hz"
+    )
+
+    print(
+        f"Amplitude: "
+        f"{np.mean(amplitudes):.6e} +/- "
+        f"{np.std(amplitudes, ddof=ddof):.6e}"
+    )
+
+    print(
+        f"FWHM: "
+        f"{np.mean(fwhms_hz):.3f} +/- "
+        f"{np.std(fwhms_hz, ddof=ddof):.3f} Hz"
+    )
+
+    print(
+        f"Mean individual FWHM fit uncertainty: "
+        f"{np.mean(fwhm_errors_hz):.3f} Hz"
+    )
+
+    print(
+        f"A/FWHM proxy: "
+        f"{np.mean(amplitude_over_fwhm_values):.6e} +/- "
+        f"{np.std(amplitude_over_fwhm_values, ddof=ddof):.6e} per Hz"
+    )
+
+    print(
+        f"Signed Y slope: "
+        f"{np.mean(y_slopes):.6e} +/- "
+        f"{np.std(y_slopes, ddof=ddof):.6e} per Hz"
+    )
+
+    print(
+        f"Absolute Y slope: "
+        f"{np.mean(absolute_y_slopes):.6e} +/- "
+        f"{np.std(absolute_y_slopes, ddof=ddof):.6e} per Hz"
+    )
+
+    print(
+        f"Y line-fit R^2: "
+        f"{np.nanmean(y_r_squared_values):.5f} +/- "
+        f"{np.nanstd(y_r_squared_values, ddof=ddof):.5f}"
+    )
+
+    # Plot only the requested chunk.
+    if plot_data is None:
+        print(
+            f"\nChunk {PLOT_CHUNK} was not fitted successfully, "
+            "so no plot was created."
+        )
+        return
+
+    frequency = plot_data["frequency"]
+    x = plot_data["x"]
+    y = plot_data["y"]
+    phase = plot_data["phase"]
+    f_fit = plot_data["f_fit"]
+    parameters = plot_data["parameters"]
+    centre_hz = plot_data["centre_hz"]
+    fwhm_hz = plot_data["fwhm_hz"]
+    half_window_hz = plot_data["half_window_hz"]
+    linear_mask = plot_data["linear_mask"]
+    y_line = plot_data["y_line"]
+    y_slope = plot_data["y_slope"]
+    chunk = plot_data["chunk"]
+
+    dense_frequency = np.linspace(
+        f_fit.min(),
+        f_fit.max(),
+        1000,
+    )
+
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize=(9, 9),
+        sharex=True,
+    )
+
+    # X and Lorentzian fit.
+    axes[0].plot(
+        frequency,
+        x,
+        "o",
+        markersize=3,
+        label="X data",
+    )
+
     axes[0].plot(
         dense_frequency,
-        lorentzian_single(dense_frequency, *parameters),
+        lorentzian_single(
+            dense_frequency,
+            *parameters,
+        ),
         "r-",
         label="Lorentzian fit",
     )
-    axes[0].axvspan(FIT_MIN_HZ, FIT_MAX_HZ, color="grey", alpha=0.12)
-    axes[0].axvline(centre_hz, color="black", linestyle=":")
-    axes[0].set_ylabel("X")
+
+    axes[0].axvspan(
+        FIT_MIN_HZ,
+        FIT_MAX_HZ,
+        color="grey",
+        alpha=0.12,
+    )
+
+    axes[0].axvline(
+        centre_hz,
+        color="black",
+        linestyle=":",
+    )
+
+    axes[0].set_ylabel("X (nA)")
     axes[0].legend()
     axes[0].grid()
 
-    axes[1].plot(frequency, y, "o", markersize=3, label="Y data")
-    axes[1].plot(frequency[linear_mask], y_line, "r-", label="Central line fit")
+    # Y and central line fit.
+    axes[1].plot(
+        frequency,
+        y,
+        "o",
+        markersize=3,
+        label="Y data",
+    )
+
+    axes[1].plot(
+        frequency[linear_mask],
+        y_line,
+        "r-",
+        label="Central line fit",
+    )
+
     axes[1].axvspan(
         centre_hz - half_window_hz,
         centre_hz + half_window_hz,
         color="orange",
         alpha=0.18,
     )
-    axes[1].axvline(centre_hz, color="black", linestyle=":")
-    axes[1].set_ylabel("Y")
+
+    axes[1].axvline(
+        centre_hz,
+        color="black",
+        linestyle=":",
+    )
+
+    axes[1].set_ylabel("Y (nA)")
     axes[1].legend()
     axes[1].grid()
 
-    axes[2].plot(frequency, phase, "o", markersize=3)
-    axes[2].axvline(centre_hz, color="black", linestyle=":")
+    # Saved phase.
+    axes[2].plot(
+        frequency,
+        phase,
+        "o",
+        markersize=3,
+    )
+
+    axes[2].axvline(
+        centre_hz,
+        color="black",
+        linestyle=":",
+    )
+
     axes[2].set_xlabel("Frequency (Hz)")
     axes[2].set_ylabel("Phase (rad)")
     axes[2].grid()
 
     fig.suptitle(
-        f"Chunk {CHUNK}: centre={centre_hz:.1f} Hz, "
-        f"FWHM={fwhm_hz:.1f} Hz, |Y slope|={abs(y_slope):.3e}/Hz"
+        f"Chunk {chunk}: "
+        f"centre = {centre_hz:.1f} Hz, "
+        f"FWHM = {fwhm_hz:.1f} Hz, "
+        f"|Y slope| = {abs(y_slope):.3e} nA/Hz"
     )
+
     fig.tight_layout()
     plt.show()
 
 
 if __name__ == "__main__":
-    main()
+    fit_single_sensor_run()
