@@ -21,7 +21,7 @@ strings_in_foldernames = ["b1", # bias field value for cell 1 (uA)
 csv_filename = "dev3994_demods_0_sample_00000.csv" # the name of the csv file to read in each folder
 base_folder = r"Y:\KiranPhalke\NMOR_sensor_characterization\sweep_test_with_power_measurements\power_adjustment"
 cell_str = ["cell1", "cell2"]
-freq_limits = [(800, 2400), (2800, 4500)]  # frequency limits for cell1 and cell2
+freq_limits = [(800, 2400), (2600, 4500)]  # frequency limits for cell1 and cell2
 
 
 def is_valid_foldername(foldername):
