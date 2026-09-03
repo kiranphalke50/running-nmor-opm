@@ -17,10 +17,6 @@ import numpy as np
 from scipy.optimize import curve_fit, differential_evolution
 
 # --------------------------- user settings ---------------------------
-CSV_FILE = r"Y:\KiranPhalke\NMOR_sensor_characterization\test_sweep_b1_m320_b2_600_p1_290_p2_90_l_200_000\dev3994_demods_0_sample_00000.csv"
-CHUNK = 0
-FIT_MIN_HZ = 800
-FIT_MAX_HZ = 2400
 LINEAR_HALF_WINDOW_FWHM = 0.25  # fit Y over centre +/- 0.25 * FWHM
 TOGGLE_PLOT = True  # set to False to skip plotting
 # --------------------------------------------------------------------
@@ -188,7 +184,7 @@ def plot_all_chunks_fits(base_folder, chunks, results_all_chunks, cell_str):
     # subplot3 has overlaid phase of all chunks
     fig, axes = plt.subplots(3, 1, figsize=(9, 3 * num_chunks), sharex=True)
     for idx, (result, chunk) in enumerate(zip(results_all_chunks.values(), chunks.values(), strict=True)):
-        frequency = chunk[0] # index 0 : frequency, 1 : x, 2 : y, 3 : phase
+        frequency = chunk[0]  # index 0 : frequency, 1 : x, 2 : y, 3 : phase
         x = chunk[1]
         y = chunk[2]
         phase = chunk[3]
@@ -229,7 +225,6 @@ def plot_all_chunks_fits(base_folder, chunks, results_all_chunks, cell_str):
     fig.suptitle(f"Overlay of all fitted chunks for {cell_str}")
     fig.tight_layout()
     plt.savefig(os.path.join(output_fit_plots_dir, f"{cell_str}_all_chunks_fit_plot.png"), dpi=300)
-    plt.show()
 
 
 def fit_single_chunk(base_folder, chunk, cell_str, frequency, x, y, phase, freq_limits):
@@ -385,9 +380,7 @@ def fit_multiple_chunks_without_averaging(base_folder, filepath, cell_str, freq_
 
 
 if __name__ == "__main__":
-    base_folder = os.path.dirname(CSV_FILE)
-    try:
-        results_all_chunks = fit_multiple_chunks_without_averaging(base_folder, CSV_FILE, freq_limits=(FIT_MIN_HZ, FIT_MAX_HZ))
-        print("Fitting completed successfully.")
-    except Exception as e:
-        print(f"An error occurred during fitting: {e}")
+    print("This script is intended to be imported as a module, not run directly.")
+    print("Use fit_lorentzian_multiple_runs.py to fit multiple runs and cells.")
+    print("Make appropriate changes if you want to run this script directly for a single run.")
+    print("Ensure that the CSV_FILE, CHUNK, FIT_MIN_HZ, and FIT_MAX_HZ variables are set correctly.")

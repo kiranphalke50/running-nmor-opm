@@ -3,7 +3,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
-PLOT_POWER_TRANSFER = False # set to True to plot power transfer overview
+PLOT_POWER_TRANSFER = False  # set to True to plot power transfer overview
 
 # =============================================================================
 # File names
@@ -17,7 +17,7 @@ cell2_csv = base_folder / "lorentzian_fit_results_cell2.csv"
 # cols_to_exclude = ["chunk_label", "adjusted_parameter", "p1", "p2"]
 cols_to_include = ["absolute_y_slope", "amplitude_over_fwhm", "fwhm_hz", "y_r_squared", "amplitude"]
 
-output_dir = base_folder / "plots"
+output_dir = base_folder / "plots_slope_ratio"
 output_dir.mkdir(exist_ok=True)
 
 # =============================================================================
@@ -128,7 +128,12 @@ if PLOT_POWER_TRANSFER:
     color1 = "tab:blue"
 
     ax1.plot(
-        power_plot_df["power_fibre_entry_mW"], power_plot_df["power_fibre_exit_mW"], "o-", color=color1, linewidth=2, label="Fibre Exit Power"
+        power_plot_df["power_fibre_entry_mW"],
+        power_plot_df["power_fibre_exit_mW"],
+        "o-",
+        color=color1,
+        linewidth=2,
+        label="Fibre Exit Power",
     )
 
     ax1.set_xlabel("Power at Fibre Entry (mW)")
