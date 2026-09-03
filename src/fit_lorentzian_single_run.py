@@ -9,6 +9,7 @@ The Y slope is a responsivity/sensitivity proxy, not absolute sensitivity.
 """
 
 import csv
+import os
 import warnings
 
 import matplotlib.pyplot as plt
@@ -20,10 +21,8 @@ CSV_FILE = r"Y:\KiranPhalke\NMOR_sensor_characterization\test_sweep_b1_m320_b2_6
 CHUNK = 0
 FIT_MIN_HZ = 800
 FIT_MAX_HZ = 2400
-LINEAR_HALF_WINDOW_FWHM = 0.40  # fit Y over centre +/- 0.40 * FWHM
-PLOT_CHUNK = 0
-MAX_CHUNKS = 20  # maximum number of chunks to attempt to read
-TOGGLE_PLOT = False  # set to False to skip plotting
+LINEAR_HALF_WINDOW_FWHM = 0.25  # fit Y over centre +/- 0.25 * FWHM
+TOGGLE_PLOT = True  # set to False to skip plotting
 # --------------------------------------------------------------------
 
 
@@ -57,13 +56,13 @@ def read_zi_csv(filename, chunk=0):
 
 def read_zi_csv_all_chunks(filename):
     """Read frequency, x, y and phase from all ZI CSV chunks."""
-    chunks = []
+    chunks = {}
     chunk_index = 0
 
     while True:
         try:
             chunk_data = read_zi_csv(filename, chunk=chunk_index)
-            chunks.append(chunk_data)
+            chunks[chunk_index] = chunk_data
             chunk_index += 1
         except ValueError:
             break
@@ -107,6 +106,8 @@ def generate_initial_parameters(x_data, y_data):
 
 
 def plot_fitted_single_chunk(
+    base_folder,
+    cell_str,
     frequency,
     x,
     y,
@@ -122,6 +123,9 @@ def plot_fitted_single_chunk(
     chunk,
     freq_limits,
 ):
+    output_fit_plots_dir = os.path.join(base_folder, "fit_plots_single_chunks")
+    os.makedirs(output_fit_plots_dir, exist_ok=True)
+
     dense_frequency = np.linspace(f_fit.min(), f_fit.max(), 1000)
 
     fig, axes = plt.subplots(3, 1, figsize=(9, 9), sharex=True)
@@ -143,9 +147,7 @@ def plot_fitted_single_chunk(
     # Y and central line fit.
     axes[1].plot(frequency, y, "o", markersize=3, label="Y data")
     axes[1].plot(frequency[linear_mask], y_line, "r-", label="Central line fit")
-    axes[1].axvspan(
-        centre_hz - half_window_hz, centre_hz + half_window_hz, color="orange", alpha=0.18
-    )
+    axes[1].axvspan(centre_hz - half_window_hz, centre_hz + half_window_hz, color="orange", alpha=0.18)
     axes[1].axvline(centre_hz, color="black", linestyle=":")
     axes[1].set_ylabel("Y (nA)")
     axes[1].legend()
@@ -158,14 +160,79 @@ def plot_fitted_single_chunk(
     axes[2].set_ylabel("Phase (rad)")
     axes[2].grid()
 
-    fig.suptitle(
-        f"Chunk {chunk}: centre = {centre_hz:.1f} Hz, FWHM = {fwhm_hz:.1f} Hz, |Y slope| = {abs(y_slope):.3e} nA/Hz"
-    )
+    fig.suptitle(f"Chunk {chunk}: centre = {centre_hz:.1f} Hz, FWHM = {fwhm_hz:.1f} Hz, |Y slope| = {abs(y_slope):.3e} nA/Hz")
     fig.tight_layout()
+    # plt.show()
+
+    # Save the plot to a file.
+    plot_filename = f"{cell_str}_chunk_{chunk}_fit_plot.png"
+    fig.savefig(os.path.join(output_fit_plots_dir, plot_filename), dpi=300)
+    print(f"Saved plot for chunk {chunk} to {plot_filename}")
+
+
+def plot_all_chunks_fits(base_folder, chunks, results_all_chunks, cell_str):
+    """Plot all fitted chunks in a single figure."""
+    # check if chunk size is same with chunks and results_all_chunks
+    if len(chunks) != len(results_all_chunks):
+        print(f"Warning: Number of chunks ({len(chunks)}) does not match number of results ({len(results_all_chunks)}).")
+    # temporarily remove any chunks that are not in results_all_chunks
+    chunks = {k: v for k, v in chunks.items() if k in results_all_chunks}
+    num_chunks = len(chunks)
+
+    # create output directory
+    output_fit_plots_dir = os.path.join(base_folder, "fit_plots_overlay_all_chunks")
+    os.makedirs(output_fit_plots_dir, exist_ok=True)
+
+    # create 3 sub-plots : subplot1 has overlaid x of all chunks with their lorentzian fits
+    # subplot2 has overlaid y of all chunks with their linear fits
+    # subplot3 has overlaid phase of all chunks
+    fig, axes = plt.subplots(3, 1, figsize=(9, 3 * num_chunks), sharex=True)
+    for idx, (result, chunk) in enumerate(zip(results_all_chunks.values(), chunks.values(), strict=True)):
+        frequency = chunk[0] # index 0 : frequency, 1 : x, 2 : y, 3 : phase
+        x = chunk[1]
+        y = chunk[2]
+        phase = chunk[3]
+        parameters = result["parameters"]
+        dense_frequency = np.linspace(frequency.min(), frequency.max(), 1000)
+
+        axes[0].plot(frequency, x, "o", markersize=3, label=f"Chunk {result['chunk_label']} X data")
+        axes[0].plot(
+            dense_frequency,
+            lorentzian_single(dense_frequency, *parameters),
+            "r-",
+            label=f"Chunk {result['chunk_label']} Lorentzian fit",
+        )
+        axes[0].axvline(result["centre_hz"], color="black", linestyle=":")
+        axes[0].set_ylabel("X (nA)")
+        axes[0].legend()
+        axes[0].grid()
+
+        centre_hz = result["centre_hz"]
+        fwhm_hz = result["fwhm_hz"]
+        half_window_hz = LINEAR_HALF_WINDOW_FWHM * fwhm_hz
+        linear_mask = np.abs(frequency - centre_hz) <= half_window_hz
+        y_line = result["y_slope"] * frequency[linear_mask] + result["y_intercept"]
+        axes[1].plot(frequency[linear_mask], y_line, "r-", label=f"Chunk {result['chunk_label']} fit")
+        axes[1].axvspan(centre_hz - half_window_hz, centre_hz + half_window_hz, color="orange", alpha=0.18)
+        axes[1].axvline(centre_hz, color="black", linestyle=":")
+        axes[1].set_ylabel("Y (nA)")
+        axes[1].legend()
+        axes[1].grid()
+
+        axes[2].plot(frequency, phase, "o", markersize=3, label=f"Chunk {result['chunk_label']} Phase data")
+        axes[2].axvline(centre_hz, color="black", linestyle=":")
+        axes[2].set_xlabel("Frequency (Hz)")
+        axes[2].set_ylabel("Phase (rad)")
+        axes[2].legend()
+        axes[2].grid()
+
+    fig.suptitle(f"Overlay of all fitted chunks for {cell_str}")
+    fig.tight_layout()
+    plt.savefig(os.path.join(output_fit_plots_dir, f"{cell_str}_all_chunks_fit_plot.png"), dpi=300)
     plt.show()
 
 
-def fit_single_chunk(chunk, frequency, x, y, phase, freq_limits):
+def fit_single_chunk(base_folder, chunk, cell_str, frequency, x, y, phase, freq_limits):
     result_single_chunk = {}
     try:
         # Select the frequency interval containing the resonance.
@@ -231,7 +298,8 @@ def fit_single_chunk(chunk, frequency, x, y, phase, freq_limits):
 
         # Save results for this chunk.
         result_single_chunk = {
-            "chunk_label" : chunk,
+            "chunk_label": chunk,
+            "parameters": parameters,
             "amplitude": amplitude,
             "centre_hz": centre_hz,
             "hwhm_hz": hwhm_hz,
@@ -245,6 +313,27 @@ def fit_single_chunk(chunk, frequency, x, y, phase, freq_limits):
             "y_intercept": y_intercept,
             "y_r_squared": y_r_squared,
         }
+
+        # plot fitted chunk
+        if TOGGLE_PLOT:
+            plot_fitted_single_chunk(
+                base_folder,
+                cell_str,
+                frequency,
+                x,
+                y,
+                phase,
+                f_fit,
+                parameters,
+                centre_hz,
+                fwhm_hz,
+                half_window_hz,
+                linear_mask,
+                y_line,
+                y_slope,
+                chunk,
+                freq_limits,
+            )
 
         print(
             f"Chunk {chunk:2d}: "
@@ -265,7 +354,7 @@ def fit_single_chunk(chunk, frequency, x, y, phase, freq_limits):
         return None
 
 
-def fit_multiple_chunks_without_averaging(filepath, freq_limits):
+def fit_multiple_chunks_without_averaging(base_folder, filepath, cell_str, freq_limits):
     results_all_chunks = {}
 
     if not isinstance(freq_limits, (list, tuple)) or len(freq_limits) != 2:
@@ -278,25 +367,27 @@ def fit_multiple_chunks_without_averaging(filepath, freq_limits):
     # read all the chunks available in the csv file and fit each chunk separately
     chunks = read_zi_csv_all_chunks(filepath)
 
-    for chunk_id, chunk in enumerate(chunks):
+    for chunk_id, chunk in chunks.items():
         # extract frequency, x, y and phase from the chunk
         frequency, x, y, phase = chunk
 
-        result = fit_single_chunk(chunk_id, frequency, x, y, phase, freq_limits)
+        result = fit_single_chunk(base_folder, chunk_id, cell_str, frequency, x, y, phase, freq_limits)
         if result is not None:
             results_all_chunks[chunk_id] = result
 
     if not results_all_chunks:
         raise RuntimeError("No chunks were fitted successfully.")
 
+    if TOGGLE_PLOT:
+        plot_all_chunks_fits(base_folder, chunks, results_all_chunks, cell_str)
+
     return results_all_chunks
 
 
 if __name__ == "__main__":
+    base_folder = os.path.dirname(CSV_FILE)
     try:
-        results_all_chunks = fit_multiple_chunks_without_averaging(
-            CSV_FILE, freq_limits=(FIT_MIN_HZ, FIT_MAX_HZ)
-        )
+        results_all_chunks = fit_multiple_chunks_without_averaging(base_folder, CSV_FILE, freq_limits=(FIT_MIN_HZ, FIT_MAX_HZ))
         print("Fitting completed successfully.")
     except Exception as e:
         print(f"An error occurred during fitting: {e}")

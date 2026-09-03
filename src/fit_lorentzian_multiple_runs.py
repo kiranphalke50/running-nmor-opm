@@ -23,9 +23,9 @@ strings_in_foldernames = [
 ]  # parameters that change between runs, and are used to identify the relevant folders to read in
 csv_filename = "dev3994_demods_0_sample_00000.csv"  # the name of the csv file to read in each folder
 csv_header_filename = "dev3994_demods_0_sample_header_00000.csv"  # headerfile for chunk label to adjusted parameter mapping
-base_folder = r"Y:\KiranPhalke\NMOR_sensor_characterization\sweep_test_with_power_cells_separated\laser_detuning"
+base_folder = r"Y:\KiranPhalke\NMOR_sensor_characterization\sweep_test_04_with_power_with_ania\power_adjustment"
 cell_list = ["cell1", "cell2", "cell12"]  # cell12 is a gradiometer configuration
-freq_limits = (1000, 2400)  # frequency limits
+freq_limits = (1000, 1800)  # frequency limits
 
 
 def is_valid_foldername(foldername, cell_str=None):
@@ -118,7 +118,7 @@ def fit_single_param_adjustment(base_folder, cell_str=None, freq_limits=None):
     adjusted_parameters = get_adjusted_parameter_from_chunk_labels(header_csv_file)
 
     # Fit the model to each chunk of data
-    results_all_chunks = fit_multiple_chunks_without_averaging(csv_file, freq_limits=freq_limits)
+    results_all_chunks = fit_multiple_chunks_without_averaging(base_folder, csv_file, cell_str, freq_limits=freq_limits)
 
     # adjusted parameters : dict with chunk number as key and adjusted parameter as value
     # results_all_chunks : dict with chunk number as key and fit results as value
