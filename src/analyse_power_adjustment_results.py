@@ -9,7 +9,7 @@ PLOT_POWER_TRANSFER = False  # set to True to plot power transfer overview
 # File names
 # =============================================================================
 
-base_folder = Path(r"Y:\KiranPhalke\NMOR_sensor_characterization\sweep_test_04_with_power_with_ania\power_adjustment")
+base_folder = Path(r"Y:\KiranPhalke\NMOR_sensor_characterization\sweep_test_05_after_offset_correction\power_adjustment")
 cell1_power_csv = base_folder / "laser_power_measurements_cell1.csv"
 cell2_power_csv = base_folder / "laser_power_measurements_cell2.csv"
 cell1_csv = base_folder / "lorentzian_fit_results_cell1.csv"

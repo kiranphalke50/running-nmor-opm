@@ -23,9 +23,9 @@ strings_in_foldernames = [
 ]  # parameters that change between runs, and are used to identify the relevant folders to read in
 csv_filename = "dev3994_demods_0_sample_00000.csv"  # the name of the csv file to read in each folder
 csv_header_filename = "dev3994_demods_0_sample_header_00000.csv"  # headerfile for chunk label to adjusted parameter mapping
-base_folder = r"Y:\KiranPhalke\NMOR_sensor_characterization\sweep_test_04_with_power_with_ania\power_adjustment"
+base_folder = r"Y:\KiranPhalke\NMOR_sensor_characterization\sweep_test_05_after_offset_correction\biasfield_adjustment"
 cell_list = ["cell1", "cell2", "cell12"]  # cell12 is a gradiometer configuration
-freq_limits = (1000, 1800)  # frequency limits
+freq_limits = (500, 5000)  # frequency limits
 
 
 def is_valid_foldername(foldername, cell_str=None):
