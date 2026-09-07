@@ -15,7 +15,7 @@ cell2_power_csv = base_folder / "laser_power_measurements_cell2.csv"
 cell1_csv = base_folder / "lorentzian_fit_results_cell1.csv"
 cell2_csv = base_folder / "lorentzian_fit_results_cell2.csv"
 # cols_to_exclude = ["chunk_label", "adjusted_parameter", "p1", "p2"]
-cols_to_include = ["absolute_y_slope", "amplitude_over_fwhm", "fwhm_hz", "y_r_squared", "amplitude"]
+cols_to_include = ["absolute_y_slope", "amplitude_over_fwhm", "fwhm_hz", "y_r_squared", "amplitude", "auxin0_average_mV"]
 
 output_dir = base_folder / "plots_slope_ratio"
 output_dir.mkdir(exist_ok=True)

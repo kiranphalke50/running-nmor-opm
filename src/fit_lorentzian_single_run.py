@@ -18,13 +18,13 @@ from scipy.optimize import curve_fit, differential_evolution
 
 # --------------------------- user settings ---------------------------
 LINEAR_HALF_WINDOW_FWHM = 0.25  # fit Y over centre +/- 0.25 * FWHM
-TOGGLE_PLOT = True  # set to False to skip plotting
+TOGGLE_PLOT = False  # set to False to skip plotting
 # --------------------------------------------------------------------
 
 
 def read_zi_csv(filename, chunk=0):
     """Read frequency, x, y and phase from the selected ZI CSV chunk."""
-    wanted = {"frequency", "x", "y", "phase"}
+    wanted = {"frequency", "x", "y", "phase", "auxin0"}
     data = {}
 
     with open(filename, newline="") as file:
@@ -47,7 +47,7 @@ def read_zi_csv(filename, chunk=0):
         raise ValueError(f"Field lengths do not match: {lengths}")
 
     order = np.argsort(data["frequency"])
-    return tuple(data[name][order] for name in ("frequency", "x", "y", "phase"))
+    return tuple(data[name][order] for name in ("frequency", "x", "y", "phase", "auxin0"))
 
 
 def read_zi_csv_all_chunks(filename):
@@ -184,10 +184,11 @@ def plot_all_chunks_fits(base_folder, chunks, results_all_chunks, cell_str):
     # subplot3 has overlaid phase of all chunks
     fig, axes = plt.subplots(3, 1, figsize=(9, 3 * num_chunks), sharex=True)
     for idx, (result, chunk) in enumerate(zip(results_all_chunks.values(), chunks.values(), strict=True)):
-        frequency = chunk[0]  # index 0 : frequency, 1 : x, 2 : y, 3 : phase
+        frequency = chunk[0]  # index 0 : frequency, 1 : x, 2 : y, 3 : phase, 4 : auxin0
         x = chunk[1]
         y = chunk[2]
         phase = chunk[3]
+        auxin0 = chunk[4]
         parameters = result["parameters"]
         dense_frequency = np.linspace(frequency.min(), frequency.max(), 1000)
 
@@ -227,7 +228,7 @@ def plot_all_chunks_fits(base_folder, chunks, results_all_chunks, cell_str):
     plt.savefig(os.path.join(output_fit_plots_dir, f"{cell_str}_all_chunks_fit_plot.png"), dpi=300)
 
 
-def fit_single_chunk(base_folder, chunk, cell_str, frequency, x, y, phase, freq_limits):
+def fit_single_chunk(base_folder, chunk, cell_str, frequency, x, y, phase, auxin0, freq_limits):
     result_single_chunk = {}
     try:
         # Select the frequency interval containing the resonance.
@@ -291,6 +292,12 @@ def fit_single_chunk(base_folder, chunk, cell_str, frequency, x, y, phase, freq_
         # Old A/W proxy, now using FWHM consistently.
         amplitude_over_fwhm = amplitude / fwhm_hz
 
+        # average auxin0 over the final 50 points of the chunk, if available
+        if len(auxin0) >= 50:
+            auxin0_average = np.mean(auxin0[-50:])
+        else:
+            auxin0_average = np.mean(auxin0)
+
         # Save results for this chunk.
         result_single_chunk = {
             "chunk_label": chunk,
@@ -307,6 +314,7 @@ def fit_single_chunk(base_folder, chunk, cell_str, frequency, x, y, phase, freq_
             "absolute_y_slope": abs(y_slope),
             "y_intercept": y_intercept,
             "y_r_squared": y_r_squared,
+            "auxin0_average_mV": auxin0_average,
         }
 
         # plot fitted chunk
@@ -364,9 +372,9 @@ def fit_multiple_chunks_without_averaging(base_folder, filepath, cell_str, freq_
 
     for chunk_id, chunk in chunks.items():
         # extract frequency, x, y and phase from the chunk
-        frequency, x, y, phase = chunk
+        frequency, x, y, phase, auxin0 = chunk
 
-        result = fit_single_chunk(base_folder, chunk_id, cell_str, frequency, x, y, phase, freq_limits)
+        result = fit_single_chunk(base_folder, chunk_id, cell_str, frequency, x, y, phase, auxin0, freq_limits)
         if result is not None:
             results_all_chunks[chunk_id] = result
 
